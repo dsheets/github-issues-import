@@ -8,6 +8,7 @@ import datetime
 import argparse, configparser
 
 import query
+import re
 
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 default_config_file = os.path.join(__location__, 'config.ini')
@@ -204,6 +205,7 @@ def send_request(which, url, post_data=None):
 	req.add_header("User-Agent", "IQAndreas/github-issues-import")
 	
 	try:
+		print("=> '%s'" % full_url)
 		response = urllib.request.urlopen(req)
 		json_data = response.read()
 	except urllib.error.HTTPError as error:
@@ -278,7 +280,7 @@ def import_label(source):
 	print("Successfully created label '%s'" % result_label['name'])
 	return result_label
 
-def import_comments(comments, issue_number):
+def import_comments(comments, issue_number, new_issue_numbers):
 	result_comments = []
 	for comment in comments:
 	
@@ -288,7 +290,7 @@ def import_comments(comments, issue_number):
 		template_data['user_avatar'] = comment['user']['avatar_url']
 		template_data['date'] = format_date(comment['created_at'])
 		template_data['url'] =  comment['html_url']
-		template_data['body'] = comment['body']
+		template_data['body'] = fix_issue_links(comment['body'], new_issue_numbers)
 		
 		comment['body'] = format_comment(template_data)
 
@@ -296,6 +298,15 @@ def import_comments(comments, issue_number):
 		result_comments.append(result_comment)
 		
 	return result_comments
+	
+def fix_issue_links(message, new_issue_numbers):
+	for old_num, new_num in new_issue_numbers.items():
+		message = message.replace("#" + str(old_num), "#$#$" + str(new_num))
+		
+	message = re.sub(r' #([0-9]+)', r' https://github.com/docker/pinata/issues/\1', message)
+		
+	message = message.replace("#$#$", "#" )
+	return message
 
 # Will only import milestones and issues that are in use by the imported issues, and do not exist in the target repository
 def import_issues(issues):
@@ -313,6 +324,14 @@ def import_issues(issues):
 		for label in known_labels:
 			if label['name'] == name : return label
 		return None
+
+	new_issue_numbers = {}
+	global index
+	last_issues = send_request('target', "issues")
+	index = 1 if not last_issues else (last_issues[0]["number"] +1)
+	for issue in issues:
+		new_issue_numbers[issue['number']] = index
+		index += 1
 	
 	new_issues = []
 	num_new_comments = 0
@@ -360,7 +379,7 @@ def import_issues(issues):
 		template_data['user_avatar'] = issue['user']['avatar_url']
 		template_data['date'] = format_date(issue['created_at'])
 		template_data['url'] =  issue['html_url']
-		template_data['body'] = issue['body']
+		template_data['body'] = fix_issue_links(issue['body'], new_issue_numbers) 
 		
 		if "pull_request" in issue and issue['pull_request']['html_url'] is not None:
 			new_issue['body'] = format_pull_request(template_data)
@@ -407,7 +426,7 @@ def import_issues(issues):
 		print("Successfully created issue '%s'" % result_issue['title'])
 		
 		if 'comments' in issue:
-			result_comments = import_comments(issue['comments'], result_issue['number'])		
+			result_comments = import_comments(issue['comments'], result_issue['number'], new_issue_numbers)		
 			print(" > Successfully added", len(result_comments), "comments.")
 		
 		result_issues.append(result_issue)
