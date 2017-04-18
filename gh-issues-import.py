@@ -301,11 +301,11 @@ def import_comments(comments, issue_number, new_issue_numbers):
 	
 def fix_issue_links(message, new_issue_numbers):
 	for old_num, new_num in new_issue_numbers.items():
-		message = message.replace("#" + str(old_num), "#$#$" + str(new_num))
+		message = re.sub(r'(^|\s)#' + str(old_num), r'\1#$#$' + str(new_num), message)
 		
-	message = re.sub(r' #([0-9]+)', r' https://github.com/docker/pinata/issues/\1', message)
+	message = re.sub(r'(^|\s)#([0-9]+)', r'\1docker/pinata#\2', message)
 		
-	message = message.replace("#$#$", "#" )
+	message = message.replace("#$#$", "#")
 	return message
 
 # Will only import milestones and issues that are in use by the imported issues, and do not exist in the target repository
